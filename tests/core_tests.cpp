@@ -85,7 +85,7 @@ int main(int argc,char** argv){try{
                     if(verb==L"retry")expect(button.GetNamedBoolean(L"isEnabled")==!pending,"Retry must not duplicate an in-flight operation.");
                 }
                 expect(noise==(page==WidgetPage::Home||(size==WidgetSize::Small&&(page==WidgetPage::Noise||page==WidgetPage::Equalizer||page==WidgetPage::Presets))?3:0),"Home must expose all three direct noise controls, including Small.");
-                if(page==WidgetPage::Home)expect(card.find("Last seen")!=std::string::npos,"Cached readings must be explicitly labelled.");
+                if(page==WidgetPage::Home){expect(card.find("Last seen")==std::string::npos&&card.find("\"retry\"")==std::string::npos,"Home reports connection state without a manual retry.");if(!pending)expect(card.find("Disconnected")!=std::string::npos,"Unreachable earbuds must read Disconnected.");}
             }
             WidgetView view;view.page=page;view.band=1;
             auto card=make_card(live,size,view,icons);auto parsed=JsonObject::Parse(winrt::to_hstring(card));

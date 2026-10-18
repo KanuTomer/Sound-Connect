@@ -171,6 +171,10 @@ private:
         std::unique_ptr<Session> session;
         bool active=false,suspended=false;
         auto release_at=Clock::time_point::max();
+        // Earbuds often accept the Bluetooth link before their control channel
+        // is ready, so a failed connect retries on its own with backoff.
+        constexpr std::chrono::seconds retry_delays[]={2s,5s,10s,20s,30s,60s};
+        auto retry_at=Clock::time_point::max();size_t retries=0;
         for(;;) {
             std::optional<Command> command;
             {
@@ -179,27 +183,31 @@ private:
                 if(!commands_.empty()){command=std::move(commands_.front());commands_.pop_front();}
                 if(commands_.empty())ResetEvent(wake_);
             }
+            bool scheduled=false,connecting=false;
+            if(!command&&!session&&Clock::now()>=retry_at){scheduled=true;retry_at=Clock::time_point::max();command=Command{active?Operation::Retry:Operation::Reconnect};}
+            // A fresh trigger (activation, Bluetooth link, resume) restarts the backoff.
+            if(command&&!scheduled&&(command->operation==Operation::Activate||command->operation==Operation::Retry||command->operation==Operation::Reconnect)){retries=0;retry_at=Clock::time_point::max();}
             try {
                 if(command && command->operation==Operation::Deactivate) {
                     active=false;release_at=snapshot().release_when_hidden?Clock::now()+15s:Clock::time_point::max();
                     if(!session) publish([](auto& s){s.ready=false;s.pending=false;s.fresh=false;s.status="Not connected";});
                 } else if(command&&command->operation==Operation::Policy){release_at=!active&&snapshot().release_when_hidden?Clock::now()+15s:Clock::time_point::max();
                 } else if(command&&(command->operation==Operation::Suspend||command->operation==Operation::Disconnect)){
-                    suspended=command->operation==Operation::Suspend;session.reset();release_at=Clock::time_point::max();
+                    suspended=command->operation==Operation::Suspend;session.reset();release_at=Clock::time_point::max();retry_at=Clock::time_point::max();retries=0;
                     publish([&](auto& s){s.ready=s.pending=s.fresh=false;s.status=suspended?"Sleeping":"Not connected";s.error.clear();});
                 } else if(command && (command->operation==Operation::Activate || command->operation==Operation::Retry||command->operation==Operation::Reconnect)) {
                     if(command->operation==Operation::Reconnect){suspended=false;if(snapshot().address.empty()||(!active&&snapshot().release_when_hidden))continue;}
                     else {active=true;release_at=Clock::time_point::max();}
                     if(suspended)continue;
                     if(!session) {
-                        session.reset();
+                        connecting=true;session.reset();
                         publish([](auto& s){s.ready=false;s.fresh=false;s.pending=true;s.status="Connecting...";s.error.clear();});
                         auto device=find_earbuds();
                         auto previous=snapshot().address;
                         if(!previous.empty() && previous!=device.address) throw std::runtime_error("The remembered earbuds are unavailable; another WF-C710N will not be selected automatically.");
                         session=std::make_unique<Session>();session->connect(device,false,false,true);
                         publish([&](auto& s){s.address=device.address;++s.connection_generation;});
-                        read(*session);
+                        read(*session);retries=0;
                     }else if(command->operation!=Operation::Reconnect){
                         publish([](auto& s){s.pending=true;s.status="Refreshing...";});
                         check(mdrHeadphonesRequestSync(session->headphones),"Refresh state");session->until(MDR_EVENT_SYNC_COMPLETE,3s);read(*session);
@@ -231,15 +239,18 @@ private:
                 session.reset();
                 {std::lock_guard lock(mutex_);std::erase_if(commands_,[](const auto& c){return c.operation!=Operation::Activate && c.operation!=Operation::Deactivate;});}
                 publish([&](auto& s){s.ready=false;s.pending=false;s.fresh=false;s.status="Controls unavailable";s.error=error.what();});
+                if(connecting&&!suspended&&retries<std::size(retry_delays))retry_at=Clock::now()+retry_delays[retries++];
             } catch(const winrt::hresult_error& error) {
                 session.reset();
+                if(connecting&&!suspended&&retries<std::size(retry_delays))retry_at=Clock::now()+retry_delays[retries++];
                 publish([&](auto& s){s.ready=false;s.pending=false;s.fresh=false;s.status="Bluetooth unavailable";s.error=winrt::to_string(error.message());});
             }
             // No scheduled work while warm and idle. Only actual socket data,
             // commands, lifecycle events, or the optional release deadline wake us.
             HANDLE waits[]={wake_,session?session->wait_handle():nullptr};
             DWORD timeout=INFINITE;
-            if(session&&release_at!=Clock::time_point::max())timeout=static_cast<DWORD>(std::clamp<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(release_at-Clock::now()).count(),0,MAXDWORD-1));
+            auto deadline=session?release_at:retry_at;
+            if(deadline!=Clock::time_point::max())timeout=static_cast<DWORD>(std::clamp<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(deadline-Clock::now()).count(),0,MAXDWORD-1));
             auto waited=WaitForMultipleObjects(waits[1]?2:1,waits,FALSE,timeout);
             if(waited==WAIT_FAILED){publish([](auto& s){s.ready=s.pending=s.fresh=false;s.status="Controls unavailable";s.error="Could not wait for Bluetooth events.";});break;}
         }

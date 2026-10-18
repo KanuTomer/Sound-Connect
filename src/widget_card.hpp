@@ -120,9 +120,9 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
         }
         // Status only earns a row when something needs attention.
         const bool healthy=s.fresh&&s.ready;
-        auto status=s.pending?(s.status=="Connecting..."?"Connecting…":"Updating…"):!s.fresh?checked_time(s.checked):"Earbuds aren’t reachable";
-        if(s.pending&&!s.fresh&&s.checked)status+=" · Last seen";
-        auto status_row=[&](){Items fields{col({text(status,"Small",!s.fresh)},"stretch",16)};if(!s.ready&&!s.pending)fields.push_back(col({text("Retry","Small",false,true)},"auto",16,action("retry","Retry connection")));return columns(fields,16);};
+        // Reconnection is automatic, so the row only reports state.
+        auto status=s.pending?(s.status=="Connecting..."?"Connecting…":"Updating…"):!s.ready?"Disconnected":"Updating…";
+        auto status_row=[&](){return columns({col({text(status,"Small",true)},"stretch",16)},16);};
         if(compact){if(s.fresh)add(columns(cells,36));else add(box({status_row()},36));add(noise_tiles(),4);}
         else{
             if(!healthy)add(status_row());
@@ -153,7 +153,7 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
     }else if(page==WidgetPage::Equalizer){
         bool can_edit=enabled&&editable_eq(s),reset=can_edit&&view.baseline&&view.baseline->preset==s.preset&&(view.baseline->bands!=s.bands||view.baseline->bass!=s.bass);
         Items trailing;
-        if(!compact){if(!s.ready||view.failed_write)trailing.push_back(col({text("Retry","Small",false,true)},"auto",24,action("retry","Refresh settings",!s.pending)));else trailing.push_back(col({text("Reset","Small",!reset)},"auto",24,action("eq.reset","Restore values captured when editing began",reset)));
+        if(!compact){if(view.failed_write)trailing.push_back(col({text("Retry","Small",false,true)},"auto",24,action("retry","Refresh settings",!s.pending)));else trailing.push_back(col({text("Reset","Small",!reset)},"auto",24,action("eq.reset","Restore values captured when editing began",reset)));
             trailing.push_back(pad(12));trailing.push_back(icon_button(icons,"settings","view.more","Preferences",true,24));}
         title("Equalizer","view.home",trailing);
         // Explicit insets avoid a nested minHeight box whose native hover is
@@ -168,7 +168,7 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
             };
             if(expanded){for(int i=0;i<5;++i)add(step_row(i),i?4:8);}else add(step_row(band),4);
             add(step_row(5),expanded?8:4);
-            auto note=view.failed_write?"Change not confirmed. Retry above.":s.pending?"":!s.fresh?checked_time(s.checked):!editable_eq(s)?"Choose a custom preset to edit.":"";
+            std::string note=view.failed_write?"Change not confirmed. Retry above.":s.pending?"":!s.ready?"Disconnected":!editable_eq(s)?"Choose a custom preset to edit.":"";
             if(!note.empty())add(text(note,"Small",true),expanded?8:4);
         }else add(text(s.eq_supported?"Choose a preset to view its curve.":"EQ has not been reported.","Small",true),compact?4:12);
     }else if(page==WidgetPage::Presets){
