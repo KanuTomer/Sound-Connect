@@ -51,7 +51,7 @@ static Snapshot load_cache(const std::filesystem::path& path,bool& logging) {
         s.firmware=winrt::to_string(json.GetNamedString(L"firmware",L""));
         s.checked=static_cast<int64_t>(json.GetNamedNumber(L"checked",0));
         s.noise=static_cast<int>(json.GetNamedNumber(L"noise",-1));
-        s.ambient=static_cast<int>(json.GetNamedNumber(L"ambient",-1));
+        s.ambient=static_cast<int>(json.GetNamedNumber(L"ambient",-1));s.voice=static_cast<int>(json.GetNamedNumber(L"voice",-1));
         s.noise_supported=json.GetNamedBoolean(L"noise_supported",false);
         s.ambient_supported=json.GetNamedBoolean(L"ambient_supported",false);
         s.eq_supported=json.GetNamedBoolean(L"eq_supported",false);
@@ -135,7 +135,7 @@ public:
         HIGHCONTRASTW contrast{sizeof(contrast)};SystemParametersInfoW(SPI_GETHIGHCONTRAST,sizeof(contrast),&contrast,0);
         bool high=(contrast.dwFlags&HCF_HIGHCONTRASTON)!=0;auto foreground=GetSysColor(COLOR_WINDOWTEXT);
         if(!artwork_loaded||artwork_contrast!=high||artwork_text!=foreground){
-            for(auto name:{"case","noise-cancelling","ambient","off","equalizer","back","more","previous","next","plus","minus","check","bluetooth","bass","link","diagnostics","log"}){
+            for(auto name:{"case","settings","noise-cancelling","ambient","off","equalizer","back","more","previous","next","plus","minus","check","bluetooth","bass","link","diagnostics","log"}){
                 bool white=GetRValue(foreground)+GetGValue(foreground)+GetBValue(foreground)>384;
                 std::string light=std::string(name)+(high?(white?"-hc-dark.png":"-hc-light.png"):"-light.png"),dark=std::string(name)+(high?(white?"-hc-dark.png":"-hc-light.png"):"-dark.png");
                 icons.symbols[name]={icon_data(assets_path/light),icon_data(assets_path/dark)};
@@ -143,13 +143,12 @@ public:
             }
             icons.light=icons.symbols["equalizer"].first;icons.dark=icons.symbols["equalizer"].second;
             icons.marker={selection_marker(false,high),selection_marker(true,high)};
-        icons.button_frames=button_frame_artwork(high);
-        icons.border={border_image(false,high),border_image(true,high)};icons.surface={button_surface(false,high),button_surface(true,high)};icons.divider={divider_image(false,high),divider_image(true,high)};
+        icons.border={border_image(false,high),border_image(true,high)};icons.surface={button_surface(false,high),button_surface(true,high)};
             for(int i=0;i<2;++i)icons.switches[i]={switch_image(i!=0,false,high),switch_image(i!=0,true,high)};
             artwork_loaded=true;artwork_contrast=high;artwork_text=foreground;curve_key.clear();battery_key.clear();
         }
         auto batteries=std::to_string(state.batteries[0])+":"+std::to_string(state.batteries[1])+":"+std::to_string(state.batteries[2]);
-        if(batteries!=battery_key){for(int i=0;i<3;++i)icons.batteries[i]={battery_image(state.batteries[i],i==2,false,high),battery_image(state.batteries[i],i==2,true,high)};icons.battery_readouts=battery_readout_artwork(state.batteries,high);battery_key=std::move(batteries);}
+        if(batteries!=battery_key){for(int i=0;i<3;++i)icons.batteries[i]={battery_image(state.batteries[i],i==2,false,high),battery_image(state.batteries[i],i==2,true,high)};battery_key=std::move(batteries);}
         bool curve=false;for(auto& [id,record]:widgets)curve|=record.active&&((record.view.page==WidgetPage::Equalizer&&record.size!=WidgetSize::Small)||(record.view.page==WidgetPage::Home&&record.size==WidgetSize::Large));
         if(curve&&state.bands.size()==5){
             COLORREF accent=high?GetSysColor(COLOR_HIGHLIGHT):RGB(76,194,255);
@@ -168,7 +167,7 @@ public:
         try{JsonObject j;j.SetNamedValue(L"address",JsonValue::CreateStringValue(winrt::to_hstring(s.address)));j.SetNamedValue(L"firmware",JsonValue::CreateStringValue(winrt::to_hstring(s.firmware)));
             j.SetNamedValue(L"logging",JsonValue::CreateBooleanValue(logging));j.SetNamedValue(L"checked",JsonValue::CreateNumberValue(static_cast<double>(s.checked)));
             j.SetNamedValue(L"release_when_hidden",JsonValue::CreateBooleanValue(s.release_when_hidden));
-            j.SetNamedValue(L"noise",JsonValue::CreateNumberValue(s.noise));j.SetNamedValue(L"ambient",JsonValue::CreateNumberValue(s.ambient));
+            j.SetNamedValue(L"noise",JsonValue::CreateNumberValue(s.noise));j.SetNamedValue(L"ambient",JsonValue::CreateNumberValue(s.ambient));j.SetNamedValue(L"voice",JsonValue::CreateNumberValue(s.voice));
             j.SetNamedValue(L"noise_supported",JsonValue::CreateBooleanValue(s.noise_supported));j.SetNamedValue(L"ambient_supported",JsonValue::CreateBooleanValue(s.ambient_supported));j.SetNamedValue(L"eq_supported",JsonValue::CreateBooleanValue(s.eq_supported));
             j.SetNamedValue(L"preset",JsonValue::CreateNumberValue(s.preset));j.SetNamedValue(L"bass",JsonValue::CreateNumberValue(s.bass));
             JsonArray bands;for(auto band:s.bands)bands.Append(JsonValue::CreateNumberValue(band));j.SetNamedValue(L"bands",bands);
@@ -188,13 +187,14 @@ public:
         if(auto command=eq_command(view,state,verb)){
             if(controller->send(*command)){
                 if(!view.baseline&&(command->operation==Operation::Bands||command->operation==Operation::Bass))view.baseline=EqBaseline{state.preset,state.bass,state.bands};
-                view.proposed=*command;view.failed_write=false;view.page=WidgetPage::Equalizer;
+                // Only the Presets list returns to the EQ view; Home chips stay put.
+                view.proposed=*command;view.failed_write=false;if(view.page==WidgetPage::Presets)view.page=WidgetPage::Equalizer;
                 if(command->operation==Operation::Preset)view.baseline.reset();
                 update_widgets();
             }
             return;
         }
-        if(suffix_number(verb,L"eq.preset.")==static_cast<int>(state.preset)){view.page=WidgetPage::Equalizer;update_widgets();return;}
+        if(suffix_number(verb,L"eq.preset.")==static_cast<int>(state.preset)){if(view.page==WidgetPage::Presets)view.page=WidgetPage::Equalizer;update_widgets();return;}
         if(verb==L"pref.release"){controller->release_when_hidden(!state.release_when_hidden);save(controller->snapshot());update_widgets();return;}
         if(verb==L"pref.logging"){logging=!logging;save(state);update_widgets();return;}
         if(verb==L"app.exit"&&!state.pending){PostQuitMessage(0);return;}
@@ -205,6 +205,7 @@ public:
             if(controller->send({Operation::Noise,mode})&&view.page==WidgetPage::Noise){view.page=WidgetPage::Home;update_widgets();}
         }
         else if(verb==L"ambient.up"||verb==L"ambient.down"){auto s=controller->snapshot();controller->send({Operation::Ambient,std::clamp(s.ambient+(verb==L"ambient.up"?1:-1),1,20)});}
+        else if(verb==L"ambient.voice"){auto s=controller->snapshot();controller->send({Operation::Voice,s.voice==1?0:1});}
         else if(verb==L"open.sound")open(0);
         else if(verb==L"open.settings")open(2);
     }

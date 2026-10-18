@@ -21,9 +21,7 @@ struct WidgetIcons {
     std::map<std::string,std::pair<std::string,std::string>> curves;
     std::array<std::pair<std::string,std::string>,3> batteries;
     std::array<std::pair<std::string,std::string>,2> switches;
-    std::pair<std::string,std::string> marker,surface,divider,border;
-    std::map<int,std::pair<std::string,std::string>> button_frames;
-    std::map<std::string,std::array<std::pair<std::string,std::string>,3>> battery_readouts;
+    std::pair<std::string,std::string> marker,surface,border;
 };
 static bool battery_low(int value){return value>=0&&value<=20;}
 static bool widget_eq_action_allowed(WidgetSize size,std::wstring_view verb){return size!=WidgetSize::Small||!(verb.starts_with(L"eq.")||verb==L"view.eq"||verb==L"view.presets"||verb.starts_with(L"view.presets.")||verb.starts_with(L"view.band."));}

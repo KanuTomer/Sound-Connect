@@ -12,7 +12,7 @@ struct Snapshot {
     bool ready{}, pending{}, noise_supported{}, ambient_supported{}, eq_supported{}, fresh{};
     std::string status="Not connected", error, firmware, address;
     std::array<int,3> batteries{-1,-1,-1};
-    int noise=-1, ambient=-1, bass{};
+    int noise=-1, ambient=-1, voice=-1, bass{};
     uint32_t preset{};
     std::vector<int32_t> bands;
     std::vector<std::pair<uint32_t,std::string>> presets;
@@ -31,7 +31,7 @@ inline const char* preset_name(uint32_t preset) {
     }
 }
 
-enum class Operation { Activate, Deactivate, Retry, Noise, Ambient, Preset, Bands, Bass, Reset, Policy, Suspend, Reconnect, Disconnect };
+enum class Operation { Activate, Deactivate, Retry, Noise, Ambient, Voice, Preset, Bands, Bass, Reset, Policy, Suspend, Reconnect, Disconnect };
 struct Command { Operation operation; int value{}; std::vector<int32_t> bands; int bass{}; uint32_t preset{}; };
 
 class Controller {
@@ -98,7 +98,7 @@ private:
         }
         MDRNoiseControl noise{};
         if(session.noise_reported && mdrHeadphonesGetNoiseControl(session.headphones,MDR_PROPERTY_CURRENT,&noise)==MDR_RESULT_OK) {
-            next.noise=static_cast<int>(noise.mode); next.ambient=static_cast<int>(noise.ambient_level);
+            next.noise=static_cast<int>(noise.mode); next.ambient=static_cast<int>(noise.ambient_level); next.voice=noise.focus_on_voice?1:0;
         }
         if(next.eq_supported) {
             MDREqualizer eq{};
@@ -123,13 +123,15 @@ private:
     }
     void execute(Session& session,const Command& command) {
         auto current=snapshot();
-        if(command.operation==Operation::Noise || command.operation==Operation::Ambient) {
-            if(!current.noise_supported || (command.operation==Operation::Ambient && !current.ambient_supported)) throw std::runtime_error("This noise control is unavailable.");
+        if(command.operation==Operation::Noise || command.operation==Operation::Ambient || command.operation==Operation::Voice) {
+            if(!current.noise_supported || (command.operation!=Operation::Noise && !current.ambient_supported)) throw std::runtime_error("This noise control is unavailable.");
             MDRNoiseControl wanted{};
             check(mdrHeadphonesGetNoiseControl(session.headphones,MDR_PROPERTY_CURRENT,&wanted),"Read noise state");
             if(command.operation==Operation::Noise) {
                 if(command.value<0 || command.value>2) throw std::runtime_error("Invalid noise mode.");
                 wanted.mode=static_cast<MDRNoiseMode>(command.value);
+            } else if(command.operation==Operation::Voice) {
+                wanted.focus_on_voice=command.value?MDR_TRUE:MDR_FALSE;
             } else {
                 if(command.value<1 || command.value>20) throw std::runtime_error("Ambient level must be between 1 and 20.");
                 wanted.mode=MDR_NOISE_MODE_AMBIENT; wanted.ambient_level=command.value;
