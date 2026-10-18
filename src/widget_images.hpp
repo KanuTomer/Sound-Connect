@@ -53,21 +53,38 @@ static std::string button_frame(int logical_width,int logical_height,bool select
 }
 static auto button_frame_artwork(bool high){
     std::map<int,std::pair<std::string,std::string>> result;
-    for(auto [width,height]:{std::pair{28,28},std::pair{130,44},std::pair{85,46},std::pair{85,62}})
+    for(auto [width,height]:{std::pair{28,28},std::pair{85,30},std::pair{130,44},std::pair{85,62}})
         for(bool selected:{false,true}){int key=height+(selected?1000:0);result[key]={button_frame(width,height,selected,false,high),button_frame(width,height,selected,true,high)};}
     return result;
 }
 static std::string battery_readout_image(int value,int index,int size,bool dark,bool high){
-    if(value<0||value>20)return {};
-    constexpr int scale=4,width=80*scale;int logical_height=size==0?16:size==1?21:25,height=logical_height*scale,font_size=size==0?12:size==1?17:20;
-    std::wstring label=value==0&&index<2?L"Off":std::to_wstring(value)+L"%";if(size==0)label=std::wstring(index==0?L"Left ":index==1?L"Right ":L"Case ")+label;
-    auto color=high?GetSysColor(COLOR_WINDOWTEXT):dark?RGB(255,154,147):RGB(179,41,36);
+    bool valid=value>=0&&value<=100,low=valid&&value<=20;
+    constexpr int scale=4,width=80*scale;int logical_height=size==0?18:size==1?21:25,height=logical_height*scale,font_size=size==0?14:size==1?17:20;
+    std::wstring label=!valid?L"--":value==0&&index<2?L"Off":std::to_wstring(value)+L"%";
+    auto color=high?GetSysColor(COLOR_WINDOWTEXT):low?(dark?RGB(255,154,147):RGB(179,41,36)):!valid?(dark?RGB(194,195,196):RGB(97,97,97)):(dark?RGB(244,244,244):RGB(32,32,32));
     HDC dc=CreateCompatibleDC(nullptr);if(!dc)winrt::throw_last_error();BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;void* raw{};
-    HBITMAP mask=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&raw,nullptr,0);HFONT font=CreateFontW(-font_size*scale,0,0,0,FW_MEDIUM,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI");
+    // Render every reading with the same font, rather than mixing low-battery
+    // artwork with host-rendered percentages using a different font/weight.
+    HBITMAP mask=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&raw,nullptr,0);HFONT font=CreateFontW(-font_size*scale,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Segoe UI");
     if(!mask||!font){if(mask)DeleteObject(mask);if(font)DeleteObject(font);DeleteDC(dc);throw std::runtime_error("Battery readout could not be created.");}
-    auto old_bitmap=SelectObject(dc,mask),old_font=SelectObject(dc,font);std::fill_n(static_cast<uint8_t*>(raw),width*height*4,0);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));RECT rect{0,0,width,height};DrawTextW(dc,label.c_str(),-1,&rect,DT_SINGLELINE|DT_NOPREFIX|DT_LEFT|DT_VCENTER);GdiFlush();
+    auto old_bitmap=SelectObject(dc,mask),old_font=SelectObject(dc,font);std::fill_n(static_cast<uint8_t*>(raw),width*height*4,0);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));RECT rect{size==0?24*scale:0,0,width,height};DrawTextW(dc,label.c_str(),-1,&rect,DT_SINGLELINE|DT_NOPREFIX|DT_LEFT|DT_VCENTER);GdiFlush();
     std::vector<uint8_t> pixels(width*height*4);auto* bytes=static_cast<uint8_t*>(raw);for(int i=0;i<width*height;++i){pixels[i*4]=GetBValue(color);pixels[i*4+1]=GetGValue(color);pixels[i*4+2]=GetRValue(color);pixels[i*4+3]=std::max({bytes[i*4],bytes[i*4+1],bytes[i*4+2]});}
-    SelectObject(dc,old_bitmap);SelectObject(dc,old_font);DeleteObject(mask);DeleteObject(font);DeleteDC(dc);return bitmap_uri(width,height,pixels);
+    SelectObject(dc,old_bitmap);SelectObject(dc,old_font);DeleteObject(mask);DeleteObject(font);DeleteDC(dc);
+    if(size==0){
+        auto ink=high?GetSysColor(COLOR_WINDOWTEXT):low?color:dark?RGB(194,195,196):RGB(97,97,97);
+        for(int y=0;y<height;++y)for(int x=0;x<20*scale;++x){
+            float px=(x+.5f)/scale,py=(y+.5f)/scale;
+            bool body=px>=0&&px<18&&py>=4&&py<14;
+            bool corner=(px<.5f||px>17.5f)&&(py<4.5f||py>13.5f);
+            bool outline=body&&!corner&&(px<1||px>=17||py<5||py>=13);
+            bool cap=px>=18.5f&&px<20&&py>=7&&py<11;
+            bool fill=valid&&value>0&&px>=2&&px<2+14*value/100.f&&py>=6&&py<12;
+            bool unknown=!valid&&px>=6&&px<12&&py>=8.5f&&py<9.5f;
+            if(!outline&&!cap&&!fill&&!unknown)continue;
+            auto at=(y*width+x)*4;pixels[at]=GetBValue(ink);pixels[at+1]=GetGValue(ink);pixels[at+2]=GetRValue(ink);pixels[at+3]=valid||unknown?255:150;
+        }
+    }
+    return bitmap_uri(width,height,pixels);
 }
 static auto battery_readout_artwork(const std::array<int,3>& values,bool high){
     std::map<std::string,std::array<std::pair<std::string,std::string>,3>> result;const char* sizes[]={"small","medium","large"};

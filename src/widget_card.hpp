@@ -86,14 +86,14 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
     };
     auto noise_tiles=[&](){
         Items tiles;const int modes[]={1,2,0};const char* glyphs[]={"noise-cancelling","ambient","off"};const char* verbs[]={"noise.anc","noise.ambient","noise.off"};
-        int height=compact?46:62;
+        int height=compact?30:62;
         for(int i=0;i<3;++i){
             bool selected=s.fresh&&s.noise==modes[i],available=enabled&&(i==1?s.ambient_supported:s.noise_supported);if(i)tiles.push_back(pad(6));
             auto symbol=std::string(glyphs[i])+(selected?"-selected":"");auto label=i==1?"Ambient":mode_name(modes[i]);
             // Separate lines prevent the native host from keeping this caption
             // on one line and overflowing the fixed-width mode button.
             Items caption=i==0?Items{text("Noise","Small",!available,selected,"Center",1),text("cancelling","Small",!available,selected,"Center",1)}:Items{text(label,"Small",!available,selected,"Center")};
-            auto inner=box({glyph(icons,symbol.c_str(),compact?14:18),gap(compact?0:2),box(caption,compact?26:30)},height-3);
+            auto inner=compact?box({gap(6),glyph(icons,symbol.c_str(),18),gap(6)},height):box({glyph(icons,symbol.c_str(),18),gap(2),box(caption,30)},height-3);
             auto tile=flat({inner},height,action(verbs[i],std::string(mode_name(modes[i]))+(selected?", selected":""),available),icons,"Container",selected);
             tiles.push_back(col({tile}));
         }return columns(tiles,height);
@@ -104,15 +104,15 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
             int value=s.batteries[i];bool valid=value>=0&&value<=100,low=battery_low(value);auto reading=valid?(i<2&&value==0?std::string("Off"):std::to_string(value)+"%"):"--";
             if(i)cells.push_back(pad(compact?10:14));
             std::string readout;auto art=icons.battery_readouts.find(compact?"small":expanded?"large":"medium");
-            if(low&&art!=icons.battery_readouts.end())readout=image(art->second[i],80,compact?16:expanded?25:21,std::string(battery_names[i])+" battery "+reading+", low");
-            if(readout.empty())readout=text((compact?std::string(battery_names[i])+" ":"")+reading,compact?"Small":expanded?"Large":"Medium",!s.fresh,true,"Left",1,low?"Attention":"Default");
-            if(compact)cells.push_back(col({readout},"stretch",16));
+            if(art!=icons.battery_readouts.end())readout=image(art->second[i],80,compact?18:expanded?25:21,std::string(battery_names[i])+" battery "+reading+(low?", low":""));
+            if(readout.empty())readout=text(reading,compact?"Small":expanded?"Large":"Medium",!s.fresh,true,"Left",1,low?"Attention":"Default");
+            if(compact)cells.push_back(col({box({text(battery_names[i],"Small",true)},14),readout},"stretch",34));
             else cells.push_back(col({box({text(battery_names[i],"Small",true)},14),gap(4),box({readout},expanded?25:21),gap(5),image(icons.batteries[i],80,3,std::string(battery_names[i])+" battery "+(valid?std::to_string(value)+"%":"not reported"))},"stretch"));
         }
         auto status=s.pending?(s.status=="Connecting..."?"Connecting…":"Updating…"):!s.fresh?checked_time(s.checked):s.ready?"● Connected":"Earbuds aren’t reachable";
         if(s.pending&&!s.fresh&&s.checked)status+=" · Last seen";
         auto status_row=[&](){Items fields{col({text(status,"Small",!s.fresh)},"stretch",16)};if(!s.ready&&!s.pending)fields.push_back(col({text("Retry","Small",false,true)},"auto",16,action("retry","Retry connection")));return columns(fields,16);};
-        if(compact){if(s.fresh&&!s.pending)add(columns(cells,16));else add(status_row());add(noise_tiles(),4);}
+        if(compact){if(s.fresh)add(columns(cells,34));else add(box({status_row()},34));add(noise_tiles(),2);}
         else{
             add(status_row());add(columns(cells),expanded?8:4);add(noise_tiles(),expanded?12:6);
             if(s.noise==2&&s.ambient_supported){auto value=s.ambient>=1?std::to_string(s.ambient):"--";
@@ -132,16 +132,12 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
         if(curve_known){
             if(!icons.curve_light.empty())add(image(curve_art(icons,expanded?"large":"medium"),268,expanded?88:44,"Equalizer curve from −10 to +10. Values are listed below."),expanded?8:6);
             if(!expanded){Items bands;for(int i=0;i<5;++i){bool selected=i==band;auto choice=box({box({text(short_names[i],"Small",false,selected,"Center",1)},22),selected?image(icons.marker,48,2):gap(2)},24,action("view.band."+std::to_string(i),std::string("Select ")+names[i]+(selected?", selected":"")));bands.push_back(col({choice}));}add(columns(bands,24));}
-            auto displayed=[&](int index){int confirmed=index==5?s.bass:s.bands[index];std::string result=signed_value(confirmed);
-                if(view.proposed&&s.pending){auto& p=*view.proposed;std::optional<int> wanted;if(index==5&&(p.operation==Operation::Bass||p.operation==Operation::Reset))wanted=p.operation==Operation::Bass?p.value:p.bass;else if(index<5&&(p.operation==Operation::Bands||p.operation==Operation::Reset)&&p.bands.size()==5)wanted=p.bands[index];if(wanted&&*wanted!=confirmed)result+=" → "+signed_value(*wanted)+" …";}
-                return result;
-            };
             auto step_row=[&](int index,int height){int value=index==5?s.bass:s.bands[index];
-                return columns({col({text(names[index],"Small",!s.fresh)},"stretch"),col({text(displayed(index),"Small",!s.fresh,true,"Center")},"52px"),pad(8),icon_button(icons,"minus","eq.decrease."+std::to_string(index),std::string("Decrease ")+names[index],can_edit&&value>-10,28),pad(6),icon_button(icons,"plus","eq.increase."+std::to_string(index),std::string("Increase ")+names[index],can_edit&&value<10,28)},height);
+                return columns({col({text(names[index],"Small",!s.fresh)},"stretch"),col({text(signed_value(value),"Small",!s.fresh,true,"Center")},"52px"),pad(8),icon_button(icons,"minus","eq.decrease."+std::to_string(index),std::string("Decrease ")+names[index],can_edit&&value>-10,28),pad(6),icon_button(icons,"plus","eq.increase."+std::to_string(index),std::string("Increase ")+names[index],can_edit&&value<10,28)},height);
             };
             if(expanded){for(int i=0;i<5;++i)add(step_row(i,28),i?2:8);}else add(step_row(band,30),4);
             add(step_row(5,expanded?32:30),expanded?8:4);
-            auto note=view.failed_write?"Change not confirmed. Retry above.":s.pending?"Waiting for earbuds…":!s.fresh?checked_time(s.checked):!editable_eq(s)?"Choose a custom preset to edit.":"";
+            auto note=view.failed_write?"Change not confirmed. Retry above.":s.pending?"":!s.fresh?checked_time(s.checked):!editable_eq(s)?"Choose a custom preset to edit.":"";
             if(!note.empty())add(text(note,"Small",true),expanded?8:4);
         }else add(text(s.eq_supported?"Choose a preset to view its curve.":"EQ has not been reported.","Small",true),compact?4:12);
     }else if(page==WidgetPage::Presets){

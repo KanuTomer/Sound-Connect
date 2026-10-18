@@ -6,7 +6,7 @@ with Sony or Microsoft. Project source is MIT licensed.
 
 ## Install the prerelease
 
-Download **EarbudControls-0.3.2-windows-x64.zip** from
+Download **EarbudControls-0.3.3-windows-x64.zip** from
 [Releases](https://github.com/KanuTomer/Sound-Connect/releases), extract the entire
 ZIP and run **Install.cmd**. No compiler or source checkout is needed.
 
@@ -27,7 +27,7 @@ Add **WF-C710N** manually using Win + W > Add widgets. Open **Earbud Controls**
 from Start for companion controls. If the picker is stale after enabling Developer
 Mode, close and reopen the board; a Windows sign-out or restart may be needed.
 
-- Small: battery readings and three direct mode buttons; no EQ customization.
+- Small: filled battery indicators and three direct icon-only mode buttons; no EQ customization.
 - Medium: modes, ambient level, selected-band EQ and Clear Bass editing.
 - Large: curve summary and editing for all five EQ bands plus Clear Bass.
 - Presets have their own view; Preferences uses the widget header's Customize action.

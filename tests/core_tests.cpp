@@ -49,7 +49,7 @@ int main(int argc,char** argv){try{
     icons.button_frames=button_frame_artwork(false);
         icons.border={border_image(false,false),border_image(true,false)};icons.battery_readouts=battery_readout_artwork(live.batteries,false);
     icons.surface={button_surface(false,false),button_surface(true,false)};icons.divider={divider_image(false,false),divider_image(true,false)};
-    for(auto [width,height]:{std::pair{28,28},std::pair{130,44},std::pair{85,46},std::pair{85,62}}){
+    for(auto [width,height]:{std::pair{28,28},std::pair{85,30},std::pair{130,44},std::pair{85,62}}){
         auto& frame=icons.button_frames.at(height).second;
         expect(png_dimensions(frame)==std::pair{width*4,height*4},"Frames must match each control's aspect ratio at 4x resolution.");
         for(auto [x,y]:{std::pair{width*2,0},std::pair{width*2,height*4-1},std::pair{0,height*2},std::pair{width*4-1,height*2}})expect(png_pixel(frame,x,y)[3]==255,"A control must contain all four border edges in one image.");
@@ -60,6 +60,11 @@ int main(int argc,char** argv){try{
         expect(selected==std::array<uint8_t,4>{255,194,76,255},"The selected control must retain the mock's cyan bottom indicator.");
     }
     expect(battery_low(0)&&battery_low(19)&&battery_low(20)&&!battery_low(21)&&!battery_low(-1)&&!battery_low(101),"Low battery must include exactly 20 and exclude invalid readings.");
+    auto full_readout=battery_readout_image(100,1,0,true,false),low_readout=battery_readout_image(20,1,0,true,false);
+    expect(png_dimensions(full_readout)==std::pair{320,72},"Small battery icon and reading must fit an 80 by 18 slot.");
+    expect(png_pixel(full_readout,56,32)[3]==255&&png_pixel(low_readout,56,32)[3]==0,"The compact battery fill must reflect the actual percentage.");
+    expect(png_pixel(low_readout,0,32)==std::array<uint8_t,4>{147,154,255,255},"Compact low battery must retain the muted red.");
+    expect(png_pixel(battery_readout_image(-1,1,0,true,false),32,36)[3]==255&&png_pixel(battery_readout_image(0,1,0,true,false),32,36)[3]==0,"Unknown batteries must have a dash instead of an invented zero fill.");
     for(int i=0;i<2;++i)icons.switches[i]={switch_image(i!=0,false,false),switch_image(i!=0,true,false)};
     expect(battery_image(0,false,true,false)!=battery_image(90,false,true,false),"Battery fill must reflect the reported percentage.");
     expect(battery_image(-1,false,true,false)!=battery_image(0,false,true,false),"Unknown and empty batteries must look different.");
@@ -117,17 +122,22 @@ int main(int argc,char** argv){try{
     expect(widget_eq_action_allowed(WidgetSize::Medium,L"eq.increase.0")&&widget_eq_action_allowed(WidgetSize::Small,L"noise.anc"),"Size guard must retain medium EQ and one-click Small sound changes.");
     auto threshold=live;threshold.batteries={20,21,-1};auto threshold_icons=icons;threshold_icons.battery_readouts=battery_readout_artwork(threshold.batteries,false);for(int i=0;i<3;++i)threshold_icons.batteries[i]={battery_image(threshold.batteries[i],i==2,false,false),battery_image(threshold.batteries[i],i==2,true,false)};auto threshold_card=make_card(threshold,WidgetSize::Medium,{},threshold_icons);auto threshold_json=JsonObject::Parse(winrt::to_hstring(threshold_card));
     if(!export_folder.empty()){std::ofstream out(export_folder/"medium-home-3.json");out<<threshold_card;}
+    if(!export_folder.empty())for(int variant:{4,5}){auto state=live;state.batteries=variant==4?std::array<int,3>{0,100,100}:std::array<int,3>{20,21,-1};auto artwork=icons;artwork.battery_readouts=battery_readout_artwork(state.batteries,false);for(int i=0;i<3;++i)artwork.batteries[i]={battery_image(state.batteries[i],i==2,false,false),battery_image(state.batteries[i],i==2,true,false)};for(auto size:{WidgetSize::Small,WidgetSize::Medium,WidgetSize::Large}){auto size_name=size==WidgetSize::Small?"small":size==WidgetSize::Medium?"medium":"large";std::ofstream out(export_folder/(std::string(size_name)+"-home-"+std::to_string(variant)+".json"));out<<make_card(state,size,{},artwork);}}
     std::map<std::wstring,std::wstring> readout_colors;std::function<void(IJsonValue)> collect=[&](IJsonValue value){if(value.ValueType()==JsonValueType::Object){auto item=value.GetObject();if(item.GetNamedString(L"type",L"")==L"TextBlock")readout_colors[std::wstring(item.GetNamedString(L"text",L""))]=std::wstring(item.GetNamedString(L"color",L""));for(auto pair:item)collect(pair.Value());}else if(value.ValueType()==JsonValueType::Array)for(auto child:value.GetArray())collect(child);};collect(threshold_json);
-    expect(threshold_card.find("Left battery 20%, low")!=std::string::npos&&readout_colors[L"21%"]==L"Default"&&readout_colors[L"--"]==L"Default"&&threshold_card.find("Attention")==std::string::npos,"Low readings must use the approved muted-red artwork and keep accessible text.");
+    expect(threshold_card.find("Left battery 20%, low")!=std::string::npos&&threshold_card.find("Right battery 21%")!=std::string::npos&&threshold_card.find("Case battery --")!=std::string::npos&&threshold_card.find("Attention")==std::string::npos,"Readings must retain accessible text and the approved low-battery artwork.");
+    for(auto size:{WidgetSize::Medium,WidgetSize::Large}){readout_colors.clear();auto home=make_card(live,size,{},icons);collect(JsonObject::Parse(winrt::to_hstring(home)));expect(!readout_colors.contains(L"90%")&&!readout_colors.contains(L"50%"),"Percentages must use the same artwork renderer as Off, without mixing host typography.");expect(home.find("Left battery 90%")!=std::string::npos&&home.find("Right battery Off, low")!=std::string::npos&&home.find("Case battery 50%")!=std::string::npos,"All uniformly rendered values must keep accessible readings.");}
     for(auto size:{WidgetSize::Small,WidgetSize::Medium,WidgetSize::Large}){auto home=make_card(live,size,{},icons);auto actions_list=actions(JsonObject::Parse(winrt::to_hstring(home)));int mode_count=0;for(auto item:actions_list){auto verb=item.GetNamedString(L"verb");if(std::wstring_view(verb).starts_with(L"noise."))++mode_count;if(size==WidgetSize::Small)expect(!std::wstring_view(verb).starts_with(L"eq.")&&verb!=L"view.eq"&&verb!=L"view.presets","Small must expose no EQ controls.");expect(verb!=L"view.more","Preferences must use the host customization menu.");}expect(mode_count==3,"A sound mode must be selectable directly in every size.");}
+    readout_colors.clear();collect(JsonObject::Parse(winrt::to_hstring(make_card(live,WidgetSize::Small,{},icons))));
+    expect(!readout_colors.contains(L"Noise")&&!readout_colors.contains(L"cancelling")&&!readout_colors.contains(L"Ambient")&&!readout_colors.contains(L"Off"),"Small mode buttons must contain icons only, with names retained on their actions.");
+    expect(readout_colors.contains(L"Left")&&readout_colors.contains(L"Right")&&readout_colors.contains(L"Case"),"Small battery labels must be separate from the graphical readings.");
     WidgetView first,second;expect(navigate_widget(first,L"view.eq"),"Handle EQ navigation.");navigate_widget(first,L"view.band.next");
     expect(second.page==WidgetPage::Home&&second.band==0,"View state must be isolated per widget.");
     expect(navigate_widget(second,L"view.band.4")&&second.band==4&&!navigate_widget(second,L"view.band.9"),"Direct band selection must remain bounded.");
     auto change=eq_command(first,live,L"eq.increase.0");expect(change&&change->bands==std::vector<int32_t>({2,0,1,2,3}),"A band edit must preserve the other bands.");
     expect(live.bands==std::vector<int32_t>({1,0,1,2,3}),"Pending changes must not overwrite confirmed state.");
     first.baseline=EqBaseline{live.preset,live.bass,live.bands};first.proposed=*change;
-    auto pending=live;pending.pending=true;expect(make_card(pending,WidgetSize::Medium,first,icons).find("→")==std::string::npos,"Only the edited band should show a pending value.");
-    first.band=0;expect(make_card(pending,WidgetSize::Medium,first,icons).find("→ +2")!=std::string::npos,"Pending values must be visible before readback.");
+    auto pending=live;pending.pending=true;
+    first.band=0;for(auto size:{WidgetSize::Medium,WidgetSize::Large}){auto card=make_card(pending,size,first,icons);expect(card.find("→")==std::string::npos&&card.find("Waiting for earbuds")==std::string::npos,"Pending EQ must not add arrows or waiting captions.");expect(card.find("\"text\":\"+1\"")!=std::string::npos,"The last confirmed EQ value must remain visible until readback.");if(!export_folder.empty()){std::ofstream out(export_folder/(std::string(size==WidgetSize::Large?"large":"medium")+"-eq-4.json"));out<<card;}}
     auto failed=live;failed.pending=false;failed.ready=failed.fresh=false;failed.error="Transport: destination host was down";reconcile_widget(first,failed);
     expect(!first.proposed&&first.failed_write,"Failed writes must clear the optimistic value.");
     expect(make_card(failed,WidgetSize::Medium).find(failed.error)==std::string::npos,"Home must not expose technical transport errors.");
