@@ -1,0 +1,19 @@
+Earbud Controls is independent and not affiliated with Sony or Microsoft.
+Project code: MIT, Copyright (c) 2026 Kanu Tomer. See LICENSE.
+
+SonyHeadphonesClient: https://github.com/mos9527/SonyHeadphonesClient
+MIT; pinned revision b98309446e2aff7538959eb6518ab694c5264cbe.
+The release includes SonyHeadphonesClient-LICENSE.txt.
+
+fmt: https://github.com/fmtlib/fmt
+MIT; the release includes fmt-LICENSE.txt.
+
+Lucide icons: https://lucide.dev
+ISC with MIT-licensed Feather-derived portions.
+Full notices: assets/icons/LUCIDE-LICENSE.txt; included in the release.
+
+Microsoft Windows App SDK Widgets and Windows App Runtime:
+https://github.com/microsoft/WindowsAppSDK
+Microsoft license terms apply, not this project's MIT license. The release
+includes WindowsAppSDK-LICENSE.txt. The framework is Microsoft-signed and
+unmodified, from the official Windows App SDK redistributable.

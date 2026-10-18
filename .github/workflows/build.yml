@@ -1,0 +1,27 @@
+name: Windows build and tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test pinned sources
+        shell: powershell
+        run: ./scripts/build.ps1 -Check
+      - name: Test installer checks without installing
+        shell: powershell
+        run: ./tests/install_tests.ps1
+      - name: Upload unsigned debugging build
+        uses: actions/upload-artifact@v4
+        with:
+          name: EarbudControls-unsigned-windows-x64
+          path: |
+            build/bin/Release/EarbudControls.exe
+            build/bin/Release/*-LICENSE.txt
+          if-no-files-found: error

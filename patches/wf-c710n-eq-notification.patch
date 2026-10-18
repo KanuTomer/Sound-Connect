@@ -1,0 +1,15 @@
+diff --git a/libmdr/src/HeadphonesV2T1.cpp b/libmdr/src/HeadphonesV2T1.cpp
+index 351b574..9f5e5e7 100644
+--- a/libmdr/src/HeadphonesV2T1.cpp
++++ b/libmdr/src/HeadphonesV2T1.cpp
+@@ -949,6 +949,10 @@ namespace mdr
+             const auto command = static_cast<Command>(cmd[0]);
+             if (command == Command::EQEBB_NTFY_PARAM)
+             {
++                // WF-C710N 1.0.5 can notify only the command and inquiry type.
++                // It invalidates cached EQ; values must come from a fresh reply.
++                if (cmd.size() == 2)
++                    return MDR_EVENT_NEED_SYNC;
+                 Deserialize(EqEbbNtfyParamEq, res, cmd);
+                 self->mDetailsV2.mEqPresetId.overwrite(res.parameter.presetId);
+                 switch (res.parameter.bandSteps.size())
