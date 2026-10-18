@@ -17,8 +17,16 @@ if ($LASTEXITCODE -ne 0 -or $taskActual -ne $taskRevision) {
 }
 Write-Output "Sony engine pinned at $taskRevision"
 $taskEqPatch=Join-Path $taskRoot 'patches\wf-c710n-eq-notification.patch'
-git -C $taskEngine apply --reverse --check $taskEqPatch 2>$null
-if($LASTEXITCODE -ne 0){
+# A clean checkout is expected to fail the reverse check. In PowerShell 5,
+# redirected native stderr otherwise becomes a terminating error before we can
+# inspect the exit code. Keep real forward-check/apply failures terminating.
+$taskPreviousPreference=$ErrorActionPreference
+try{
+    $ErrorActionPreference='Continue'
+    git -C $taskEngine apply --reverse --check $taskEqPatch 2>$null
+    $taskAlreadyPatched=$LASTEXITCODE -eq 0
+}finally{$ErrorActionPreference=$taskPreviousPreference}
+if(-not $taskAlreadyPatched){
     git -C $taskEngine apply --check $taskEqPatch
     if($LASTEXITCODE -ne 0){throw 'EQ compatibility patch conflicts with the existing engine checkout; files were left untouched.'}
     git -C $taskEngine apply $taskEqPatch
