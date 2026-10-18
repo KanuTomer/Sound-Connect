@@ -45,10 +45,10 @@ static std::string glyph(const WidgetIcons& icons,const char* name,int size=20){
 // colours natively, instead of imitating a button with PNG frames.
 // The host adds no inner padding to styled containers, so content is inset
 // explicitly to stay inside the tile and its hover highlight.
-static std::string tile(const Items& items,int height,const std::string& click,int inset_x=12,int inset_y=8){
+static std::string tile(const Items& items,int height,const std::string& click,int inset_x=12,int inset_y=8,const char* surface="emphasis"){
     Items inner{inset_x?columns({pad(inset_x),col(items),pad(inset_x)}):columns({col(items)})};
     if(inset_y){inner.insert(inner.begin(),gap(inset_y));inner.push_back(gap(inset_y));}
-    return box(inner,height,click,"emphasis");
+    return box(inner,height,click,surface);
 }
 static std::string image_fill(const std::pair<std::string,std::string>& urls,const std::string& alt){
     if(urls.first.empty()||urls.second.empty())return {};
@@ -58,12 +58,12 @@ template<class Presets> static Presets sorted_presets(Presets choices){
     std::stable_sort(choices.begin(),choices.end(),[](auto& a,auto& b){auto rank=[](uint32_t id){return id==MDR_EQ_USER_2?0:id==MDR_EQ_USER_1?1:2;};return rank(a.first)<rank(b.first);});
     return choices;
 }
-static std::string icon_button(const WidgetIcons& icons,const char* name,const std::string& verb,const std::string& label,bool enabled=true,int size=24){
+static std::string icon_button(const WidgetIcons& icons,const char* name,const std::string& verb,const std::string& label,bool enabled=true,int size=24,const char* surface="emphasis"){
     bool step=verb.starts_with("eq.increase.")||verb.starts_with("eq.decrease.")||verb.starts_with("ambient.");
     if(!step)return col({glyph(icons,name,18)},std::to_string(size)+"px",size,action(verb,label,enabled));
     // Columns stretch to the tallest item in their row. Keep the styled
     // click target inside the column so a taller value row cannot stretch it.
-    return col({tile({glyph(icons,name,16)},size,action(verb,label,enabled),0,0)},std::to_string(size)+"px",size);
+    return col({tile({glyph(icons,name,16)},size,action(verb,label,enabled),0,0,surface)},std::to_string(size)+"px",size);
 }
 }
 static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView& view={},const WidgetIcons& icons={},bool logging=false){
@@ -158,8 +158,8 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
         title("Equalizer","view.home",trailing);
         // Explicit insets avoid a nested minHeight box whose native hover is
         // taller than its top-aligned contents.
-        int preset_inset=expanded?8:4;
-        add(box({gap(preset_inset),columns({pad(8),col({glyph(icons,"equalizer",20)},"20px",20),pad(8),col({text(preset_label,"Default")},"stretch",20),col({glyph(icons,"next",16)},"20px",20),pad(8)},20),gap(preset_inset)},0,action("view.presets","Choose equalizer preset")),expanded?8:4);
+        // Styled tiles are the only surfaces the host rounds on hover.
+        add(tile({columns({col({glyph(icons,"equalizer",20)},"20px"),pad(12),col({text(preset_label,"Default",false,false,"Left",1)}),col({glyph(icons,"next",16)},"16px")})},expanded?44:40,action("view.presets","Choose equalizer preset")),expanded?8:4);
         if(curve_known){
             if(!icons.curve_light.empty())add(image(curve_art(icons,expanded?"large":"medium"),268,expanded?88:44,"Equalizer curve from −10 to +10. Values are listed below."),expanded?8:4);
             if(!expanded){Items bands;for(int i=0;i<5;++i){bool selected=i==band;auto choice=box({box({text(short_names[i],"Small",false,selected,"Center",1)},22),selected?image(icons.marker,48,2):gap(2)},24,action("view.band."+std::to_string(i),std::string("Select ")+names[i]+(selected?", selected":"")));bands.push_back(col({choice}));}add(columns(bands,24),4);}
@@ -199,18 +199,18 @@ static std::string make_card(const Snapshot& s,WidgetSize size,const WidgetView&
         title("Preferences","view.eq",pages>1?page_controls("view.details.",page,pages):Items{});
         for(int i=page*per_page;i<std::min(static_cast<int>(rows.size()),(page+1)*per_page);++i){auto& r=rows[i];
             auto copy=col({text(r.label,"Small",false,true),text(r.hint,"Small",true)},"stretch");
-            Items row{pad(8),col({glyph(icons,r.symbol,18)},"18px"),pad(8),copy,pad(8)};
+            Items row{col({glyph(icons,r.symbol,18)},"18px"),pad(12),copy,pad(8)};
             std::string click;
             if(r.kind==2){auto value=s.ambient>=1?std::to_string(s.ambient):"--";
-                for(auto& item:Items{icon_button(icons,"minus","ambient.down","Decrease ambient level",enabled&&s.ambient>1,32),pad(4),col({text(value,"Small",false,true,"Center")},"28px",32),pad(4),icon_button(icons,"plus","ambient.up","Increase ambient level",enabled&&s.ambient<20,32)})row.push_back(item);
+                for(auto& item:Items{icon_button(icons,"minus","ambient.down","Decrease ambient level",enabled&&s.ambient>1,32,"default"),pad(4),col({text(value,"Small",false,true,"Center")},"28px",32),pad(4),icon_button(icons,"plus","ambient.up","Increase ambient level",enabled&&s.ambient<20,32,"default")})row.push_back(item);
             }else{
                 // One flat full-row target includes its state or chevron.
                 row.push_back(col({r.kind==1?text(r.on?"On":"Off","Small",false,true,"Center",1,r.on?"Accent":"Default"):glyph(icons,"next",16)},r.kind==1?"36px":"20px",28));
                 bool available=std::string_view(r.verb)!="ambient.voice"||enabled;
                 click=action(r.verb,std::string(r.label)+(r.kind==1?(r.on?", on":", off"):""),available);
             }
-            row.push_back(pad(8));
-            add(box({columns(row,0)},compact?44:expanded?56:44,click,""),i==page*per_page?8:expanded?8:4);
+            // Steppers use the card's base surface so they stand out inside the tile.
+            add(tile({columns(row,0)},compact?44:expanded?56:44,click,12,4),i==page*per_page?8:4);
         }
     }else{
         Items values; // Diagnostic strings deliberately live only in this view.
