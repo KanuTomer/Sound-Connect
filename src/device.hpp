@@ -41,6 +41,8 @@ static void check(MDRResult result, const char* operation) {
         throw std::runtime_error(std::string(operation) + ": " + mdrResultString(result));
 }
 
+// Paired earbuds that Windows has not connected: wait for the link instead of retrying.
+struct NotConnected : std::runtime_error { using std::runtime_error::runtime_error; };
 struct Device { std::string address; bool connected; };
 static Device find_earbuds() {
     BLUETOOTH_FIND_RADIO_PARAMS params{sizeof(params)};
@@ -75,7 +77,7 @@ static Device find_earbuds() {
     BluetoothFindRadioClose(radios);
     if (matches.empty()) throw std::runtime_error("WF-C710N is not paired. Pair it in Windows Bluetooth settings.");
     if (matches.size() != 1) throw std::runtime_error("More than one WF-C710N is paired. Explicit device selection is required.");
-    if (!matches[0].connected) throw std::runtime_error("WF-C710N is paired but not connected. Connect it manually, then run the probe again.");
+    if (!matches[0].connected) throw NotConnected("WF-C710N is paired but not connected. Connect it manually, then run the probe again.");
     return matches[0];
 }
 

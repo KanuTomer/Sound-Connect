@@ -175,6 +175,7 @@ private:
         // is ready, so a failed connect retries on its own with backoff.
         constexpr std::chrono::seconds retry_delays[]={2s,5s,10s,20s,30s,60s};
         auto retry_at=Clock::time_point::max();size_t retries=0;
+        int link_grace=0; // rechecks after a connect event, before Windows marks the pair connected
         for(;;) {
             std::optional<Command> command;
             {
@@ -186,7 +187,7 @@ private:
             bool scheduled=false,connecting=false;
             if(!command&&!session&&Clock::now()>=retry_at){scheduled=true;retry_at=Clock::time_point::max();command=Command{active?Operation::Retry:Operation::Reconnect};}
             // A fresh trigger (activation, Bluetooth link, resume) restarts the backoff.
-            if(command&&!scheduled&&(command->operation==Operation::Activate||command->operation==Operation::Retry||command->operation==Operation::Reconnect)){retries=0;retry_at=Clock::time_point::max();}
+            if(command&&!scheduled&&(command->operation==Operation::Activate||command->operation==Operation::Retry||command->operation==Operation::Reconnect)){retries=0;retry_at=Clock::time_point::max();link_grace=command->operation==Operation::Reconnect?2:0;}
             try {
                 if(command && command->operation==Operation::Deactivate) {
                     active=false;release_at=snapshot().release_when_hidden?Clock::now()+15s:Clock::time_point::max();
@@ -201,8 +202,9 @@ private:
                     if(suspended)continue;
                     if(!session) {
                         connecting=true;session.reset();
-                        publish([](auto& s){s.ready=false;s.fresh=false;s.pending=true;s.status="Connecting...";s.error.clear();});
+                        // Check the Bluetooth link first so a disconnected pair never flashes Connecting.
                         auto device=find_earbuds();
+                        publish([](auto& s){s.ready=false;s.fresh=false;s.pending=true;s.status="Connecting...";s.error.clear();});
                         auto previous=snapshot().address;
                         if(!previous.empty() && previous!=device.address) throw std::runtime_error("The remembered earbuds are unavailable; another WF-C710N will not be selected automatically.");
                         session=std::make_unique<Session>();session->connect(device,false,false,true);
@@ -235,6 +237,12 @@ private:
                 bool pending;
                 {std::lock_guard lock(mutex_);pending=!commands_.empty();}
                 if(snapshot().pending!=pending) publish([&](auto& s){s.pending=pending;});
+            } catch(const NotConnected&) {
+                // The Bluetooth connect event wakes us with Reconnect; no polling until then.
+                session.reset();
+                if(link_grace>0&&retries<std::size(retry_delays)){--link_grace;retry_at=Clock::now()+retry_delays[retries++];}
+                else{retry_at=Clock::time_point::max();retries=0;link_grace=0;}
+                publish([](auto& s){s.ready=false;s.pending=false;s.fresh=false;s.status="Not connected";s.error.clear();});
             } catch(const std::exception& error) {
                 session.reset();
                 {std::lock_guard lock(mutex_);std::erase_if(commands_,[](const auto& c){return c.operation!=Operation::Activate && c.operation!=Operation::Deactivate;});}
