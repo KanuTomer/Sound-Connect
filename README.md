@@ -6,7 +6,7 @@ with Sony or Microsoft. Project source is MIT licensed.
 
 ## Install the prerelease
 
-Download **EarbudControls-0.4.2-windows-x64.zip** from
+Download **EarbudControls-0.4.3-windows-x64.zip** from
 [Releases](https://github.com/KanuTomer/Sound-Connect/releases), extract the entire
 ZIP and run **Install.cmd**. No compiler or source checkout is needed.
 
